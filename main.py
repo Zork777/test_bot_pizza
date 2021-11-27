@@ -55,7 +55,7 @@ async def process_help_command(message: types.Message):
 async def cmd_start(message: types.Message):
     print (message)
     await FormPizza.size.set()
-    await message.answer(dialog['whatPizza'], reply_markup=pizzaSizeKey)
+    await message.answer(dialog['whatPizza']['question'], reply_markup=pizzaSizeKey)
 
 
 # Добавляем возможность отмены, если пользователь передумал заполнять
@@ -82,7 +82,7 @@ async def process_size(message: types.Message, state: FSMContext):
             return await message.answer('Выбери размер пиццы или отмени', reply_markup=pizzaSizeKey)
 
 #следующий вопрос, как будем платить?    
-    await message.answer(dialog['howPay'], reply_markup=payKey)
+    await message.answer(dialog['howPay']['question'], reply_markup=payKey)
 
 
 # Принимаем вид платежа, выводим и подтверждаем ордер
@@ -95,7 +95,7 @@ async def process_pay(message: types.Message, state: FSMContext):
         else:
             return await message.answer('Выбери форму оплаты или отмени', reply_markup=payKey)
 #следующий вопрос, подтверждение ордера
-    await message.answer(dialog['comfirmOrder'].format(sizePizza=FormPizza.pizzaOrder.orderNow["size"],
+    await message.answer(dialog['comfirmOrder']['question'].format(sizePizza=FormPizza.pizzaOrder.orderNow["size"],
                                                         howPay=FormPizza.pizzaOrder.orderNow["pay"]),
                                                         reply_markup=YesNoKey)
 
@@ -107,14 +107,14 @@ async def process_pay(message: types.Message, state: FSMContext):
         FormPizza.pizzaOrder.orderNow['comfirm'] = message.text
         if FormPizza.pizzaOrder.comfirmOrder():
             if message.text.lower() in 'нет' in message.text:
+                FormPizza.pizzaOrder.nap()
                 await message.answer('Ордер отменен')
             else:
                 FormPizza.pizzaOrder.finish()
-                await bot.send_message(message.chat.id, dialog['finish'])
+                await bot.send_message(message.chat.id, dialog['finish']['question'])
         else:
             return await message.answer('Укажи Да или Нет кнопкой на клавиатуре', reply_markup=YesNoKey)
-
-    FormPizza.pizzaOrder.nap()
+    
     await state.finish()
 
 
