@@ -1,30 +1,34 @@
 from transitions import Machine
 
-# создаём форму и указываем поля
+dialog = {  'whatPizza':"Какую вы хотите пиццу? Большую или маленькую?",
+            'howPay':'Как вы будете платить?',
+            'comfirmOrder':'Вы хотите {sizePizza} пиццу, оплата - {howPay}?',
+            'finish':'Спасибо за заказ!'}
 
+
+# создаём форму и указываем поля
 class pizza(object):
 
     states = ['asleep', 'OKsizePizza', 'OKpay', 'OKcomfirmOrder']
-    orderNow = {"size":"", "pay":""}
-    question = ""
+    orderNow = {"size":"", "pay":"", "comfirm":""}
     
     def __init__(self, name):
         self.name = name
         self.machine = Machine(model=self, states=pizza.states, initial='asleep')
-        self.machine.add_transition(trigger='whatPizza', source='asleep', dest='OKsizePizza', after='quiestSizePizza')
-        self.machine.add_transition(trigger='howPay', source='OKsizePizza', dest='OKpay', after='quiestPay')
-        self.machine.add_transition(trigger='comfirmOrder', source='OKpay', dest='OKcomfirmOrder', after='quiestComfirmOrder')
+        self.machine.add_transition(trigger='whatPizza', source='asleep', dest='OKsizePizza', conditions=['checkSizePizza'])
+        self.machine.add_transition(trigger='howPay', source='OKsizePizza', dest='OKpay', conditions=['checkPay'])
+        self.machine.add_transition(trigger='comfirmOrder', source='OKpay', dest='OKcomfirmOrder', conditions=['checkComfirmOrder'])
         self.machine.add_transition(trigger='finish', source='OKcomfirmOrder', dest='asleep', after='quiestFinish')
         self.machine.add_transition('nap', '*', 'asleep')
 
-    def quiestSizePizza(self):
-        self.question = "Какую вы хотите пиццу? Большую или маленькую?"
+    def checkSizePizza(self):
+        return self.orderNow["size"] in ["большую", "маленькую"]
 
-    def quiestPay(self):
-        self.question = "Как вы будете платить?"
+    def checkPay(self):
+        return self.orderNow["pay"] in ["наличными", "картой"]
 
-    def quiestComfirmOrder(self):
-        self.question = "Вы хотите {sizePizza} пиццу, оплата - {howPay}?".format(sizePizza=self.orderNow["size"], howPay=self.orderNow["pay"])
+    def checkComfirmOrder(self):
+        return self.orderNow["comfirm"] in ["да", "нет"]
 
     def quiestFinish(self):
         self.question = "Спасибо за заказ!"

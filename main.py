@@ -1,3 +1,8 @@
+import multiprocessing
+import time
+import datetime
+
+
 from aiogram import Bot, Dispatcher, types
 from aiogram.contrib.fsm_storage.memory import MemoryStorage
 from aiogram.dispatcher import FSMContext
@@ -5,7 +10,8 @@ from aiogram.dispatcher.filters import Text
 from aiogram.dispatcher.filters.state import State, StatesGroup
 from aiogram.utils import executor
 from aiogram.types import ReplyKeyboardMarkup, KeyboardButton
-from lib import pizza
+from lib import pizza, dialog
+from test import test
 
 token = '1941337133:AAF5wC8XiHQlLeC2NEPc-Zd7UaIu59jAr54' 
 bot = Bot(token=token)
@@ -43,31 +49,13 @@ async def process_help_command(message: types.Message):
     await message.answer('Чтобы сделать заказ наберите команду /start', reply_markup=startKey)
 
 
-#проверям размер пиццы
-@dp.message_handler(lambda message: message.text.lower() not in ['большую', 'маленькую', 'отмена'], state=FormPizza.size)
-async def process_size_invalid(message: types.Message):
-    return await message.answer('Выбери размер пиццы или отмени', reply_markup=pizzaSizeKey)
-
-
-#проверям платежи
-@dp.message_handler(lambda message: message.text.lower() not in ['наличными', 'картой', 'отмена'], state=FormPizza.pay)
-async def process_pay_invalid(message: types.Message):
-    return await message.answer('Выбери форму оплаты или отмени', reply_markup=payKey)
-
-
-#проверяем подтверждение ордера
-@dp.message_handler(lambda message: message.text.lower() not in ['да', 'нет'], state=FormPizza.comfirm)
-async def process_comfirm_invalid(message: types.Message):
-    return await message.answer('Укажи Да или Нет кнопкой на клавиатуре', reply_markup=YesNoKey)
-
-
 # Начинаем наш диалог
 @dp.message_handler(commands=['start'])
 @dp.message_handler(Text(equals='сделать заказ', ignore_case=True), state='*')
 async def cmd_start(message: types.Message):
+    print (message)
     await FormPizza.size.set()
-    FormPizza.pizzaOrder.whatPizza()
-    await message.answer(FormPizza.pizzaOrder.question, reply_markup=pizzaSizeKey)
+    await message.answer(dialog['whatPizza'], reply_markup=pizzaSizeKey)
 
 
 # Добавляем возможность отмены, если пользователь передумал заполнять
@@ -88,12 +76,13 @@ async def cancel_handler(message: types.Message, state: FSMContext):
 async def process_size(message: types.Message, state: FSMContext):
     async with state.proxy() as data:
         FormPizza.pizzaOrder.orderNow['size'] = message.text
-
-    await FormPizza.next()
+        if FormPizza.pizzaOrder.whatPizza():
+            await FormPizza.next()
+        else:
+            return await message.answer('Выбери размер пиццы или отмени', reply_markup=pizzaSizeKey)
 
 #следующий вопрос, как будем платить?    
-    FormPizza.pizzaOrder.howPay()
-    await message.answer(FormPizza.pizzaOrder.question, reply_markup=payKey)
+    await message.answer(dialog['howPay'], reply_markup=payKey)
 
 
 # Принимаем вид платежа, выводим и подтверждаем ордер
@@ -101,21 +90,29 @@ async def process_size(message: types.Message, state: FSMContext):
 async def process_pay(message: types.Message, state: FSMContext):
     async with state.proxy() as data:
         FormPizza.pizzaOrder.orderNow['pay'] = message.text
-        
-        await FormPizza.next()    
-        FormPizza.pizzaOrder.comfirmOrder()
-        await message.answer(FormPizza.pizzaOrder.question, reply_markup=YesNoKey)
+        if FormPizza.pizzaOrder.howPay():
+            await FormPizza.next()
+        else:
+            return await message.answer('Выбери форму оплаты или отмени', reply_markup=payKey)
+#следующий вопрос, подтверждение ордера
+    await message.answer(dialog['comfirmOrder'].format(sizePizza=FormPizza.pizzaOrder.orderNow["size"],
+                                                        howPay=FormPizza.pizzaOrder.orderNow["pay"]),
+                                                        reply_markup=YesNoKey)
 
 
 # Принимаем подтверждение ордера
 @dp.message_handler(state=FormPizza.comfirm)
 async def process_pay(message: types.Message, state: FSMContext):
     async with state.proxy() as data:
-        if message.text.lower() in 'нет' in message.text:
-            await message.answer('Ордер отменен')
+        FormPizza.pizzaOrder.orderNow['comfirm'] = message.text
+        if FormPizza.pizzaOrder.comfirmOrder():
+            if message.text.lower() in 'нет' in message.text:
+                await message.answer('Ордер отменен')
+            else:
+                FormPizza.pizzaOrder.finish()
+                await bot.send_message(message.chat.id, dialog['finish'])
         else:
-            FormPizza.pizzaOrder.finish()
-            await bot.send_message(message.chat.id, FormPizza.pizzaOrder.question)
+            return await message.answer('Укажи Да или Нет кнопкой на клавиатуре', reply_markup=YesNoKey)
 
     FormPizza.pizzaOrder.nap()
     await state.finish()
@@ -127,32 +124,32 @@ async def all_message(message: types.Message):
     await message.answer('нажмите на кнопку, чтобы сделать заказ', reply_markup=startKey)
 
 
-def test():
-    print ('test')
-    pizzaOrder = pizza("PIZZA")
-    print ('state-', pizzaOrder.state)
+def main_flow():
+  #start bot
+    print ('start bot pizza...')
+    executor.start_polling(dp, skip_updates=True)
 
-    pizzaOrder.whatPizza()
-    print (pizzaOrder.question)
-    pizzaOrder.orderNow["size"] = "большую"
-    print ('state-', pizzaOrder.state)
-
-    pizzaOrder.howPay()
-    print (pizzaOrder.question)
-    pizzaOrder.orderNow["pay"] = "наличные"
-    print ('state-', pizzaOrder.state)
-
-    pizzaOrder.comfirmOrder()
-    print (pizzaOrder.question)
-    print ('state-', pizzaOrder.state)
-
-    pizzaOrder.finish()
-    print (pizzaOrder.question)
-    print ('state-', pizzaOrder.state)
-
+#контроль работы бота, в случае падения рестарт    
+def start():
+    t_bot_flow = multiprocessing.Process(name = 'bot_flow', target=main_flow)
+    
+    t_bot_flow.start()
+    while 1:
+        if not t_bot_flow.is_alive():
+            print ('restart bot flow in Telegramm...')
+            t_bot_flow.kill()
+            t_bot_flow.terminate()
+            t_bot_flow = multiprocessing.Process(
+                            name = 'bot_flow',
+                            target=main_flow)
+            t_bot_flow.start()
+        time.sleep(1)
+        print ('telegram bot pizza{:>100}\r'.format(datetime.datetime.now().isoformat()), end='\r')  
 
 
 if __name__ == '__main__':
     # test() # тест диалога
+    start()
 
-    executor.start_polling(dp, skip_updates=True)
+
+    
